@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 
+	mssqlserver "my-rest-project/sqlservconnect" //For Database CRUD Operations
+
 	"github.com/gorilla/mux" // router
 )
 
@@ -15,20 +17,12 @@ import (
 type Movie struct {
 	Id   int    `json:"id"`
 	Name string `json:"name"`
-	Year int    `json:"year"`
+	Year string `json:"year"`
 }
 
-var Movies []Movie
-
 func main() {
-	//sample database
-	Movies = []Movie{
-		Movie{Id: 1, Name: "Avengers", Year: 2016},
-		Movie{Id: 2, Name: "Avengers:Endgame", Year: 2019},
-		Movie{Id: 3, Name: "Doctor Strange", Year: 2017},
-		Movie{Id: 4, Name: "Ironman", Year: 2010},
-		Movie{Id: 5, Name: "Thor Ragnarok", Year: 2018},
-	}
+	
+	mssqlserver.StartDatabaseServer() //start SQL SERVER
 
 	route() //handle requests
 }
@@ -59,6 +53,12 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 
 func getAllMovies(w http.ResponseWriter, r *http.Request) {
 	//Get resource Handler function
+
+	// Read Movies
+	Movies, err := mssqlserver.ReadMovies()
+	if err != nil {
+		log.Fatal("Error reading Movies: ", err.Error())
+	}
 	json.NewEncoder(w).Encode(Movies) //encode response in json and write to response Writer
 }
 
@@ -67,13 +67,16 @@ func getSingleMovie(w http.ResponseWriter, r *http.Request) {
 	variables := mux.Vars(r)               //parse the path parameters
 	id, _ := strconv.Atoi(variables["id"]) //extract id from path parameters
 
-	for _, movie := range Movies { //loop through all entries
-		if movie.Id == id { //find specific movie
-			json.NewEncoder(w).Encode(movie)
-			return //return that specific movie
-		}
+	movie, err := mssqlserver.ReadSingleMovie(id) //Read Specific record from database
+	if err != nil{
+		fmt.Fprintf(w, "Movie not found")
+		log.Fatal("Error reading Movies: ", err.Error())
 	}
-	fmt.Fprintf(w, "Movie not found")
+	if movie != nil {
+		json.NewEncoder(w).Encode(movie) //encode response in json and write to response Writer
+	} else {
+		fmt.Fprintf(w, "Movie not found")
+	}
 }
 
 func postMovie(w http.ResponseWriter, r *http.Request) {
@@ -82,8 +85,12 @@ func postMovie(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := ioutil.ReadAll(r.Body) // get the body of our POST request
 	json.Unmarshal(reqBody, &movie)      // unmarshal this into a new movie struct
 
-	Movies = append(Movies, movie) //append to current database
-	json.NewEncoder(w).Encode(movie)
+	err := mssqlserver.CreateMovie(movie.Name, movie.Year)  //insert movie into database
+	if err != nil {
+		fmt.Fprintf(w, "Error")
+		log.Fatal("Error while inserting movie: ", err.Error())
+	}
+	fmt.Fprintf(w, "Movie Inserted Succesfully!")
 }
 
 func deleteMovie(w http.ResponseWriter, r *http.Request) {
@@ -91,17 +98,12 @@ func deleteMovie(w http.ResponseWriter, r *http.Request) {
 	variables := mux.Vars(r)               //parse the path parameters
 	id, _ := strconv.Atoi(variables["id"]) //extract id from path parameters
 
-	//loop through all our movies
-	for index, movie := range Movies {
-		// if our id path parameter matches one of our movies
-		if movie.Id == id {
-			//remove the movie
-			Movies = append(Movies[:index], Movies[index+1:]...)
-			fmt.Fprintf(w, "Movie Deleted")
-			return
-		}
+	err := mssqlserver.DeleteMovie(id) // Delete movie from database
+	if err != nil {
+		fmt.Fprintf(w, "Error")
+		log.Fatal("Error while deleting movie: ", err.Error())
 	}
-	fmt.Fprintf(w, "Movie not found !")
+	fmt.Fprintf(w, "Movie Deleted Succesfully!")
 }
 
 func putMovie(w http.ResponseWriter, r *http.Request) {
@@ -113,16 +115,10 @@ func putMovie(w http.ResponseWriter, r *http.Request) {
 	var newMovie Movie
 	json.Unmarshal(reqBody, &newMovie) //unmarshal request into movie struct
 
-	//loop through all our articles
-	for index, movie := range Movies {
-		if movie.Id == id { //update the movie if id found
-			Movies[index].Id = newMovie.Id
-			Movies[index].Name = newMovie.Name
-			Movies[index].Year = newMovie.Year
-			fmt.Fprintf(w, "Movie Updated\n")
-			json.NewEncoder(w).Encode(Movies[index]) //encode response in json and return to response Writer
-			return
-		}
+	err := mssqlserver.UpdateMovie(id,newMovie.Name, newMovie.Year)  //update movie in database
+	if err != nil {
+		fmt.Fprintf(w, "Error")
+		log.Fatal("Error while updating movie: ", err.Error())
 	}
-	fmt.Fprintf(w, "Movie not found !")
+	fmt.Fprintf(w, "Movie Updated Succesfully!")
 }
